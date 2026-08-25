@@ -4,7 +4,7 @@
 
 **项目名称**：宝宝商城（Taotao Mall）
 
-**项目定位**：参考淘宝设计的 B2C 电商平台，包含商品浏览、购物车、下单结算、订单管理等完整电商功能。
+**项目定位**：宝宝电商平台，包含商品浏览、购物车、下单结算、订单管理等完整电商功能。
 
 **项目目标**：
 - 实现完整的电商业务闭环
@@ -204,12 +204,6 @@ const generateRefreshToken = (payload) => {
 };
 ```
 
-**面试讲解**：
-- Access Token 用于日常接口访问，有效期短，减少泄露风险
-- Refresh Token 仅用于刷新 Access Token，存于 Redis 校验
-- 登出时将 Access Token 加入 Redis 黑名单，实现强制失效
-- 连续登录失败 5 次后锁定账户 30 分钟
-
 **密码加密**
 ```javascript
 // Schema 预处理钩子 - 保存前自动加密
@@ -225,11 +219,6 @@ userSchema.methods.comparePassword = async function(candidate) {
   return await bcrypt.compare(candidate, this.password);
 };
 ```
-
-**面试讲解**：
-- 使用 bcryptjs 而非 MD5/SHA，因为 bcrypt 自带盐值且慢哈希
-- genSalt(12) 表示 2^12 轮迭代，平衡安全性和性能
-- select: false 确保查询时不返回密码字段
 
 ---
 
@@ -264,13 +253,6 @@ if (keyword) {
   query.$text = { $search: keyword };
 }
 ```
-
-**面试讲解**：
-- MongoDB 原生支持全文检索，适合中等规模数据
-- 可扩展：大规模数据可考虑 Elasticsearch
-- 搜索字段：商品名称 + 关键词标签
-- 权重：name 字段权重默认更高
-
 **SKU 多规格设计**
 ```javascript
 // SKU 子文档结构
@@ -290,13 +272,6 @@ specs: [{
   values: ['红色', '蓝色', '黑色']
 }]
 ```
-
-**面试讲解**：
-- 一个商品可以有多个 SKU（不同规格组合）
-- 规格定义在商品级，具体值在 SKU 中
-- 下单时需要指定 SKU code，精确扣减库存
-- 可扩展：支持二级规格（如颜色 + 尺码）
-
 **多级分类树**
 ```javascript
 // 自引用实现多级分类
@@ -333,11 +308,6 @@ categorySchema.statics.getCategoryTree = async function() {
 };
 ```
 
-**面试讲解**：
-- 使用自引用 Schema 实现无限层级（实际限制3级）
-- 虚拟字段（virtuals）不存入数据库，按需计算
-- 缓存策略：分类树缓存 30 分钟，后台更新时清除
-
 ---
 
 ### 3. 购物车系统
@@ -373,13 +343,6 @@ cartSchema.virtual('selectedTotal').get(function() {
     .toFixed(2);
 });
 ```
-
-**面试讲解**：
-- 每个用户只有一个购物车文档（1:1 关系）
-- 商品信息冗余存储（快照），即使商品下架也能显示
-- 价格以下单时的快照为准，避免价格变动纠纷
-- 虚拟字段实时计算，无需存储
-
 ---
 
 ### 4. 订单系统
@@ -424,11 +387,6 @@ orderSchema.methods.transitionTo = async function(newStatus) {
 };
 ```
 
-**面试讲解**：
-- 订单生命周期使用状态机管理，防止非法状态跳转
-- 每次状态变更记录时间线（timeline），便于追溯
-- 状态流转验证在模型层完成，业务层无需重复校验
-
 **事务保证数据一致性**
 ```javascript
 const createOrder = async (req, res) => {
@@ -458,13 +416,6 @@ const createOrder = async (req, res) => {
   }
 };
 ```
-
-**面试讲解**：
-- 使用 MongoDB 事务（4.0+ 支持）保证多操作原子性
-- 事务中任一操作失败则整体回滚
-- 涉及操作：扣减库存 → 创建订单 → 清除购物车
-- 注意：跨集合事务需要副本集支持（开发环境单节点也支持）
-
 **订单超时自动取消**
 ```javascript
 // TTL 索引实现自动过期
@@ -481,13 +432,6 @@ orderSchema.methods.transitionTo = async function(newStatus) {
   // ...
 };
 ```
-
-**面试讲解**：
-- 使用 MongoDB TTL 索引，无需额外定时任务
-- 到期自动删除文档（或设置为取消状态）
-- 精确到秒级，适合限时支付场景
-- 可替代方案：Redis + Node Cron 定时任务
-
 **库存扣减原子操作**
 ```javascript
 productSchema.statics.deductStock = async function(productId, skuCode, quantity) {
@@ -517,12 +461,6 @@ productSchema.statics.deductStock = async function(productId, skuCode, quantity)
   return product;
 };
 ```
-
-**面试讲解**：
-- 使用 MongoDB 的 findOneAndUpdate + $inc 原子操作
-- arrayFilters 实现嵌套数组元素的条件更新
-- 库存检查和扣减在同一操作中完成，无竞态条件
-- 如果返回 null，说明条件不满足（库存不足或商品下架）
 
 ---
 
@@ -570,11 +508,7 @@ class CacheService {
 | `categories:tree` | 30 分钟 | 分类树缓存 |
 | `blacklist:{token}` | Token 剩余有效期 | Token 黑名单 |
 
-#### 面试讲解
-- **缓存穿透**：查询不存在的数据时也缓存空值
-- **缓存击穿**：热点 Key 使用互斥锁保护
-- **缓存雪崩**：过期时间增加随机偏移
-- **双写策略**：更新数据时先更新数据库，再删除缓存（Cache-Aside Pattern）
+
 
 ---
 
@@ -644,143 +578,6 @@ npm run dev           # 启动开发服务器 (端口 5173)
 | POST | /api/v1/orders/:id/pay | 支付订单 |
 | PUT | /api/v1/orders/:id/receive | 确认收货 |
 
----
-
-## 💡 面试亮点总结
-
-### 技术亮点
-1. **分层架构**：路由 → 控制器 → 模型，职责清晰
-2. **双令牌认证**：Access Token + Refresh Token，兼顾安全与体验
-3. **缓存策略**：Redis 多级缓存 + Cache-Aside 模式
-4. **事务一致性**：MongoDB 事务保证订单创建的原子性
-5. **乐观锁**：findOneAndUpdate 实现库存原子扣减
-6. **状态机**：订单生命周期管理，防止非法状态流转
-7. **TTL 索引**：订单自动取消，无需定时任务
-8. **全文检索**：MongoDB Text Index 实现中文搜索
-9. **限流防刷**：express-rate-limit 防止暴力破解
-10. **参数校验**：Joi 声明式校验，减少业务层判断
-
-### 工程亮点
-1. **TypeScript**：前端类型安全，代码智能提示
-2. **统一响应格式**：{ code, message, data } 规范
-3. **错误处理中间件**：全局异常捕获，分类处理
-4. **配置分离**：.env 环境变量，敏感信息不入库
-5. **种子数据**：一键初始化示例数据
-6. **代码规范**：ESLint + Prettier（建议补充）
-
-### 可扩展方向
-1. **引入 Elasticsearch**：替代 MongoDB 全文检索
-2. **引入消息队列**：异步处理订单、发送通知
-3. **引入 Docker**：容器化部署
-4. **引入 CI/CD**：自动化测试和部署
-5. **引入单元测试**：Jest 测试覆盖率
-6. **引入 Grafana**：监控告警
-
----
-
-## 📝 常见面试问题
-
-### Q1: 为什么选择 MongoDB 而不是 MySQL？
-**回答要点**：
-- 电商业务数据结构灵活（SKU 规格多变）
-- 文档存储天然支持嵌套结构（订单商品、购物车项）
-- 水平扩展能力更强（分片集群）
-- 适合快速迭代，Schema 可动态调整
-
-### Q2: 双令牌机制的具体实现？
-**回答要点**：
-- Access Token：短期（2小时），用于日常 API 访问
-- Refresh Token：长期（7天），存于 Redis 校验
-- 流程：登录 → 双令牌 → 请求用 Access Token → 过期后用 Refresh Token 换新
-- 安全：Refresh Token 不通过 Authorization 头传输，降低 XSS 风险
-
-### Q3: 如何保证库存扣减的原子性？
-**回答要点**：
-- 使用 MongoDB findOneAndUpdate + $inc 原子操作
-- 条件过滤 { 'skus.stock': { $gte: quantity } } 检查库存
-- arrayFilters 定位嵌套数组元素
-- 整个操作在 MongoDB 层面原子执行，无竞态
-
-### Q4: Redis 缓存如何设计？
-**回答要点**：
-- 缓存策略：Cache-Aside Pattern（旁路缓存）
-- 读：先查缓存 → 未命中查数据库 → 写入缓存
-- 写：先更新数据库 → 删除缓存（而非更新缓存）
-- 原因：删除比更新更安全，防止并发更新导致脏数据
-- 过期时间：不同数据不同 TTL，分类 30min、商品 5min
-
-### Q5: 订单超时自动取消如何实现？
-**回答要点**：
-- 方案一（本项目）：MongoDB TTL 索引，expireAt 到期自动删除
-- 方案二：Redis Keyspace Notifications + 定时任务
-- 方案三：BullMQ/Agenda 等定时任务库
-- 选择理由：TTL 索引零运维，适合单体项目
-
-### Q6: 购物车数据为什么同时存 MongoDB 和 Redis？
-**回答要点**：
-- MongoDB：持久化存储，数据可靠，支持复杂查询
-- Redis：高频读写场景（购物车操作频繁），性能更高
-- 双写策略：写时双写，读时优先 Redis
-- 实际项目可根据量级选择其一
-
-### Q7: JWT 和 Session 的区别？
-**回答要点**：
-- Session：服务端存储，扩展性差（需要共享存储）
-- JWT：无状态，服务端不存储，天然支持分布式
-- JWT 缺点：无法主动失效（需配合黑名单）
-- 本项目：JWT + Redis 黑名单，兼顾无状态和可控性
-
-### Q8: 如何防止接口被刷？
-**回答要点**：
-- 全局限流：express-rate-limit，IP 维度每分钟 100 次
-- 登录限流：失败锁定账户，5 次失败锁定 30 分钟
-- 验证码：注册/登录加图形验证码（可扩展）
-- IP 黑名单：异常 IP 加入 Redis 黑名单
-
-### Q9: 商品搜索如何实现？
-**回答要点**：
-- MongoDB Text Index：支持多字段全文检索
-- 权重设置：name 字段权重高于 searchKeywords
-- 可扩展：Elasticsearch 提供更强大的搜索能力
-- 搜索结果排序：相关度 + 销量综合排序
-
-### Q10: 如果让你优化这个项目，你会怎么做？
-**回答要点**：
-1. 引入消息队列（RabbitMQ）：订单创建异步化
-2. 引入 Elasticsearch：替换全文检索
-3. 引入 Docker + Docker Compose：一键部署
-4. 引入单元测试：Jest + Supertest
-5. 引入 CI/CD：GitHub Actions 自动部署
-6. 性能优化：Redis 缓存预热、数据库索引优化
-7. 安全加固：CSRF Token、CSP 策略、参数消毒
-
----
-
-## 🎯 面试演示建议
-
-### 3 分钟版本（快速介绍）
-> "这是我做的一个全栈电商项目，参考淘宝设计。
-> 
-> 技术上后端用 Node.js + Express + MongoDB + Redis，前端用 React + TypeScript + TailwindCSS。
-> 
-> 实现了完整的电商功能：用户认证（双令牌机制）、商品管理（多级分类、全文检索）、购物车、订单系统（事务保证一致性、状态机管理生命周期）。
-> 
-> 亮点包括：Redis 多级缓存、MongoDB 事务保证订单原子性、findOneAndUpdate 实现库存原子扣减、TTL 索引实现订单超时自动取消。"
-
-### 10 分钟版本（详细讲解）
-按照以下结构讲解：
-1. **项目背景**：为什么做这个项目，解决什么问题
-2. **架构设计**：技术选型理由、分层架构图
-3. **核心功能**：挑选 2-3 个亮点功能深入讲解
-4. **技术难点**：遇到的挑战和解决方案
-5. **可优化点**：展示技术视野
-
-### 现场演示建议
-1. 展示登录/注册流程（演示 Token 机制）
-2. 搜索商品（演示全文检索）
-3. 添加购物车 → 结算 → 下单（演示完整业务闭环）
-4. 查看订单状态流转（演示状态机）
-5. 查看代码结构（展示工程规范）
 
 ---
 
@@ -800,4 +597,4 @@ npm run dev           # 启动开发服务器 (端口 5173)
 
 **文档版本**：v1.0  
 **创建日期**：2026-08-25  
-**适用项目**：淘淘商城 v1.0
+**适用项目**：宝宝商城 v1.0
