@@ -1,0 +1,36 @@
+# 02-storage.yaml
+# 面试讲解：
+#   - 数据库用 StatefulSet + VolumeClaimTemplate 动态申请持久卷
+#   - 上传文件（商品图）用 ReadWriteMany 的 PVC 可以多后端 Pod 共享
+#   - 生产：StorageClass=fast（SSD）
+---
+# MongoDB 存储
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: taotao-mongo-pvc
+  namespace: taotao-mall
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 10Gi } }
+  # storageClassName: local-path      # 根据你集群实际填写
+---
+# Redis 存储（AOF / RDB）
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: taotao-redis-pvc
+  namespace: taotao-mall
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 5Gi } }
+---
+# 后端上传文件共享目录（多副本之间也要能看到同一份上传的图片）
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: taotao-uploads-pvc
+  namespace: taotao-mall
+spec:
+  accessModes: [ReadWriteMany]          # 需要集群支持 RWMany 的 SC（如 NFS/Rook/Gluster）
+  resources: { requests: { storage: 20Gi } }
