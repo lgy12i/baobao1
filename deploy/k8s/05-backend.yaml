@@ -1,0 +1,141 @@
+# 05-backend.yaml
+# 面试讲解：
+#  - Deployment 副本数 ≥ 2，保证高可用（滚动更新/故障自愈）
+#  - HPA 根据 CPU / 内存自动扩缩
+#  - readiness 没通过不接入 Service；liveness 不通过自动重启
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taotao-backend
+  namespace: taotao-mall
+  labels: { app: taotao-backend }
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }  # 零停机滚动更新
+  selector: { matchLabels: { app: taotao-backend } }
+  template:
+    metadata: { labels: { app: taotao-backend } }
+    spec:
+      # 优雅终止：Pod 删除前等待连接清完
+      terminationGracePeriodSeconds: 45
+      # 非 root 用户运行
+      securityContext: { runAsUser: 1000, runAsNonRoot: true, fsGroup: 1000 }
+      # 等 mongo + redis 健康后再起（简单版，高级版用 initContainer 检测）
+      initContainers:
+        - name: wait-mongo-redis
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              set -e;
+              until nc -z taotao-mongo.taotao-mall.svc.cluster.local 27017; do echo "[init] 等待 MongoDB"; sleep 3; done;
+              until nc -z taotao-redis.taotao-mall.svc.cluster.local 6379; do echo "[init] 等待 Redis"; sleep 3; done;
+              echo "[init] 全部上游就绪";
+      containers:
+        - name: backend
+          # TODO CI 会打带版本号的镜像，这里先占位示例，配合 kustomize 覆盖
+          image: docker.io/lgy12i/baobao-backend:latest
+          imagePullPolicy: IfNotPresent
+          ports: [ { containerPort: 3000, name: http } ]
+          env:
+            - name: NODE_ENV
+              valueFrom: { configMapKeyRef: { name: taotao-config, key: NODE_ENV } }
+            - name: PORT
+              valueFrom: { configMapKeyRef: { name: taotao-config, key: PORT } }
+            - name: UPLOAD_PATH
+              valueFrom: { configMapKeyRef: { name: taotao-config, key: UPLOAD_PATH } }
+            - name: JWT_EXPIRES_IN
+              valueFrom: { configMapKeyRef: { name: taotao-config, key: JWT_EXPIRES_IN } }
+            - name: JWT_SECRET
+              valueFrom: { secretKeyRef: { name: taotao-secret, key: JWT_SECRET } }
+            - name: STRIPE_SECRET_KEY
+              valueFrom: { secretKeyRef: { name: taotao-secret, key: STRIPE_SECRET_KEY } }
+            # MongoDB URI 拼接：host/port/user/pass 来自 configmap+secret
+            - name: MONGODB_URI
+              value: "mongodb://$(MONGO_ROOT_USER):$(MONGO_ROOT_PASS)@$(MONGO_HOST):$(MONGO_PORT)/$(MONGO_DB)?authSource=admin"
+            - name: MONGO_ROOT_USER
+              valueFrom: { secretKeyRef: { name: taotao-secret, key: MONGO_ROOT_USER } }
+            - name: MONGO_ROOT_PASS
+              valueFrom: { secretKeyRef: { name: taotao-secret, key: MONGO_ROOT_PASS } }
+            - name: MONGO_HOST
+              valueFrom: { configMapKeyRef: { name: taotao-config, key: MONGO_HOST } }
+            - name: MONGO_PORT
+              valueFrom: { configMapKeyRef: { name: taotao-config, key: MONGO_PORT } }
+            - name: MONGO_DB
+              valueFrom: { configMapKeyRef: { name: taotao-config, key: MONGO_DB } }
+            - name: REDIS_URL
+              value: "redis://:$(REDIS_PASSWORD)@$(REDIS_HOST):$(REDIS_PORT)/0"
+            - name: REDIS_PASSWORD
+              valueFrom: { secretKeyRef: { name: taotao-secret, key: REDIS_PASSWORD } }
+            - name: REDIS_HOST
+              valueFrom: { configMapKeyRef: { name: taotao-config, key: REDIS_HOST } }
+            - name: REDIS_PORT
+              valueFrom: { configMapKeyRef: { name: taotao-config, key: REDIS_PORT } }
+          volumeMounts:
+            - name: uploads
+              mountPath: /app/uploads
+          resources:
+            requests: { cpu: 200m, memory: 256Mi }
+            limits:   { cpu: "2",  memory: 2Gi }
+          # 接入流量前通过 /health 检测
+          readinessProbe:
+            httpGet: { path: /health, port: 3000 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            successThreshold: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /health, port: 3000 }
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 15;"]   # 让 Pod 从 Service 摘除后，再给剩余请求 15s
+      volumes:
+        - name: uploads
+          persistentVolumeClaim: { claimName: taotao-uploads-pvc }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: taotao-backend
+  namespace: taotao-mall
+spec:
+  selector: { app: taotao-backend }
+  ports: [ { port: 3000, targetPort: http, name: http } ]
+  type: ClusterIP
+  sessionAffinity: None
+---
+# HPA 水平自动扩缩容：CPU 60% 或内存 70% 触发扩容，2~10 副本
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: taotao-backend-hpa
+  namespace: taotao-mall
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: taotao-backend
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 60 }
+    - type: Resource
+      resource:
+        name: memory
+        target: { type: Utilization, averageUtilization: 75 }
+  behavior:
+    scaleUp:    { stabilizationWindowSeconds: 60, policies: [{ type: Percent, value: 100, periodSeconds: 60 }] }
+    scaleDown:  { stabilizationWindowSeconds: 300, policies: [{ type: Percent, value: 20, periodSeconds: 120 }] }

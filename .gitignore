@@ -1,0 +1,47 @@
+# ====== 宝宝商城 .gitignore ======
+# 1) Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.DS_Store
+*.local
+
+# 2) 前端构建产物
+frontend/dist/
+frontend/.vite/
+frontend/.eslintcache
+
+# 3) 后端上传目录（运行时）
+backend/uploads/
+
+# 4) 日志
+logs/
+*.log
+npm-cache/
+
+# 5) 环境变量（重要：.env 禁止入库）
+.env
+.env.local
+.env.*.local
+deploy/.env
+
+# 6) 编辑器 / IDE
+.vscode/
+.idea/
+*.iml
+*.suo
+*.swp
+
+# 7) 测试 / Coverage
+coverage/
+.nyc_output/
+*.lcov
+
+# 8) 操作系统
+Thumbs.db
+
+# 9) Docker 本地卷（命名卷不会被提交，这里只是防挂载误提交）
+docker-data/
+*.tar.gz

@@ -1,0 +1,245 @@
+# =============================================================
+# CI/CD 工作流 · GitHub Actions
+# 触发时机：
+#   ① 手动 workflow_dispatch（随时点击 Build & Deploy）
+#   ② push 到 main 分支
+#   ③ tag = v*（正式发布）
+#
+# 执行步骤：
+#   1. Checkout 源码
+#   2. 安装 QEMU / Buildx（支持多架构镜像）
+#   3. 登录 Docker Hub（密码来自 GitHub Secret: DOCKERHUB_TOKEN）
+#   4. Docker 构建前端 + 后端镜像，带多层缓存（cache-from/to）
+#   5. 推送镜像到 Docker Hub：
+#         lgy12i/baobao-frontend:$TAG
+#         lgy12i/baobao-backend:$TAG
+#        $TAG 规则：tag 推送 = v1.x 主版本，其他推送 = sha7 + latest
+#   6. 部署到 K8s（2 种方式可选）
+#        A) kubectl set image  + kubeconfig（需要 Secret KUBE_CONFIG）
+#        B) Helm upgrade
+# =============================================================
+name: Build & Deploy (Baobao Mall)
+
+run-name: "${{ github.event_name }} @ ${{ github.ref_name }}  — 🧑‍💻 by @${{ github.actor }}"
+
+on:
+  push:
+    branches: [ main ]
+    tags:     [ 'v*' ]
+    paths-ignore:
+      - '**.md'
+      - '.vscode/**'
+  workflow_dispatch:
+    inputs:
+      deploy_target:
+        description: 部署目标
+        required: true
+        default: compose
+        type: choice
+        options:
+          - compose   # Docker Compose 单机（简单服务器）
+          - k8s       # Kubernetes 集群
+      environment:
+        description: 环境
+        required: true
+        default: prod
+        type: choice
+        options: [ prod, staging ]
+
+# 权限：写 packages + 读
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+concurrency:
+  group: "deploy-${{ github.ref }}"
+  cancel-in-progress: false
+
+# ================= Job =================
+jobs:
+
+  # ============ 1. 构建并推送镜像 ============
+  build-and-push:
+    name: 🐳 Build & Push Images
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      IMAGE_TAG: ${{ steps.meta.outputs.IMAGE_TAG }}
+    steps:
+      - name: 1. Checkout
+        uses: actions/checkout@v4
+
+      # 关键细节：
+      #   构建多架构镜像（linux/amd64 + linux/arm64），云服务器 / Mac / 树莓派都能跑
+      - name: 2. 安装 QEMU + Buildx
+        uses: docker/setup-qemu-action@v3
+      - name: 3. 设置 Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          platforms: linux/amd64,linux/arm64
+
+      - name: 4. 登录 Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME || 'lgy12i' }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # ========== 确定镜像 TAG ==========
+      - name: 5. 决定镜像 Tag
+        id: meta
+        run: |
+          set -e
+          REF="${GITHUB_REF##*/}"
+          if [[ "$REF" == v* ]]; then
+            TAG="$REF"
+          elif [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            TAG="sha-${GITHUB_SHA::7}"
+          else
+            TAG="dev-${GITHUB_SHA::7}"
+          fi
+          echo "IMAGE_TAG=$TAG" >> $GITHUB_OUTPUT
+          echo "✅ 最终镜像 TAG = $TAG"
+
+      # ========== 构建后端镜像 ==========
+      # 面试讲解：缓存层用 gha cache，比本地缓存快 30%+
+      - name: 6. Build & Push Backend Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./deploy/Dockerfile.backend
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            lgy12i/baobao-backend:${{ steps.meta.outputs.IMAGE_TAG }}
+            lgy12i/baobao-backend:latest
+          cache-from: type=gha,scope=backend
+          cache-to:   type=gha,scope=backend,mode=max
+
+      # ========== 构建前端镜像 ==========
+      - name: 7. Build & Push Frontend Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./deploy/Dockerfile.frontend
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            lgy12i/baobao-frontend:${{ steps.meta.outputs.IMAGE_TAG }}
+            lgy12i/baobao-frontend:latest
+          cache-from: type=gha,scope=frontend
+          cache-to:   type=gha,scope=frontend,mode=max
+
+      - name: 8. 输出 Summary
+        run: |
+          cat <<EOF >> $GITHUB_STEP_SUMMARY
+          ## 🐳 构建完成
+          - **Tag**: ${{ steps.meta.outputs.IMAGE_TAG }}
+          - 后端: `docker pull lgy12i/baobao-backend:${{ steps.meta.outputs.IMAGE_TAG }}`
+          - 前端: `docker pull lgy12i/baobao-frontend:${{ steps.meta.outputs.IMAGE_TAG }}`
+          EOF
+
+  # ============ 2. 部署到 Docker Compose（单服务器） ============
+  deploy-compose:
+    name: 🐧 Deploy via docker-compose
+    needs: [ build-and-push ]
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_target == 'compose' }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: 1. Checkout
+        uses: actions/checkout@v4
+
+      # 部署思路：SSH 到服务器，git pull + 拉取新镜像 + up -d
+      # 面试讲解：通过 SSH 远程执行 + DOCKER_HOST 也是常见方式
+      - name: 2. 远程服务器执行更新
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host:       ${{ vars.SSH_HOST }}
+          username:   ${{ vars.SSH_USER }}
+          key:        ${{ secrets.SSH_PRIVATE_KEY }}
+          port:       ${{ vars.SSH_PORT || 22 }}
+          script_stop: true
+          script: |
+            set -e
+            APP_DIR=${{ vars.APP_DIR || '/opt/baobao-mall' }}
+            TAG=${{ needs.build-and-push.outputs.IMAGE_TAG }}
+            echo "👉 进入目录 $APP_DIR"
+            cd "$APP_DIR"
+            echo "👉 拉取最新代码"
+            git fetch origin main
+            git reset --hard origin/main
+            echo "👉 拉取镜像（tag=$TAG）"
+            docker compose -f deploy/docker-compose.yml pull
+            echo "👉 更新镜像标签到 compose（用 sed 或环境变量）"
+            export COMPOSE_PROJECT_NAME=baobao
+            export IMAGE_TAG=$TAG
+            docker compose -f deploy/docker-compose.yml up -d backend frontend
+            echo "👉 健康检查"
+            sleep 10
+            docker ps --format "table {{.Names}}\t{{.Status}}"
+            echo "✅ compose 部署完成"
+
+  # ============ 3. 部署到 Kubernetes ============
+  deploy-k8s:
+    name: ☸️ Deploy to Kubernetes
+    needs: [ build-and-push ]
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.deploy_target == 'k8s') || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - name: 1. Checkout
+        uses: actions/checkout@v4
+
+      - name: 2. 安装 kubectl
+        uses: azure/setup-kubectl@v4
+        with: { version: 'v1.31.0' }
+
+      - name: 3. 写入 kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+          kubectl cluster-info
+
+      - name: 4. 应用（或创建）部署清单
+        run: |
+          NAMESPACE=taotao-mall
+          kubectl apply -f deploy/k8s/00-namespace.yaml
+          kubectl apply -f deploy/k8s/01-config-secret.yaml --namespace=$NAMESPACE
+          kubectl apply -f deploy/k8s/02-storage.yaml --namespace=$NAMESPACE
+          kubectl apply -f deploy/k8s/03-mongo.yaml --namespace=$NAMESPACE
+          kubectl apply -f deploy/k8s/04-redis.yaml --namespace=$NAMESPACE
+          kubectl apply -f deploy/k8s/05-backend.yaml --namespace=$NAMESPACE
+          kubectl apply -f deploy/k8s/06-frontend.yaml --namespace=$NAMESPACE
+          kubectl apply -f deploy/k8s/07-ingress.yaml --namespace=$NAMESPACE
+
+      - name: 5. 滚动更新镜像到最新 Tag（核心！）
+        run: |
+          NAMESPACE=taotao-mall
+          TAG=${{ needs.build-and-push.outputs.IMAGE_TAG }}
+
+          kubectl set image deployment/taotao-backend \
+            backend=lgy12i/baobao-backend:$TAG \
+            -n $NAMESPACE
+
+          kubectl set image deployment/taotao-frontend \
+            frontend=lgy12i/baobao-frontend:$TAG \
+            -n $NAMESPACE
+
+      - name: 6. 等待滚动部署成功（超时 5 分钟）
+        run: |
+          NAMESPACE=taotao-mall
+          kubectl rollout status deployment/taotao-backend  -n $NAMESPACE --timeout=300s
+          kubectl rollout status deployment/taotao-frontend -n $NAMESPACE --timeout=300s
+
+      - name: 7. 部署后检查
+        run: |
+          NAMESPACE=taotao-mall
+          echo "--- Pods ---"
+          kubectl get pods -n $NAMESPACE -o wide
+          echo "--- HPA ---"
+          kubectl get hpa  -n $NAMESPACE
+          echo "--- Ingress ---"
+          kubectl get ingress -n $NAMESPACE
+          echo "✅ K8s 部署完成"

@@ -1,0 +1,40 @@
+# 00-namespace.yaml
+# 面试讲解：
+#   多租户/多项目集群，通过 Namespace 做逻辑隔离
+#   配合 ResourceQuota 限制本命名空间的 CPU/内存配额，避免与其他业务争抢
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: taotao-mall
+  labels:
+    project: baobao-mall
+    tier: production
+---
+# 命名空间资源配额（可选，避免失控）
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: taotao-mall-quota
+  namespace: taotao-mall
+spec:
+  hard:
+    requests.cpu: "8"
+    requests.memory: 16Gi
+    limits.cpu:   "16"
+    limits.memory: 32Gi
+    persistentvolumeclaims: "10"
+    pods: "40"
+---
+# 命名空间默认请求/限制（LimitRange）
+# 开发人员没写 requests/limits 时，自动注入默认值，避免节点被打爆
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: taotao-mall-limits
+  namespace: taotao-mall
+spec:
+  limits:
+    - type: Container
+      defaultRequest: { cpu: 100m, memory: 128Mi }
+      default:        { cpu: 500m, memory: 512Mi }
+      max:            { cpu: "4",  memory: 8Gi }

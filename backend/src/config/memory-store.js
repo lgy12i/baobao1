@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 内存数据存储
  *
  * 当 MongoDB 不可用时，使用内存存储作为降级方案
@@ -418,3 +418,127 @@ store.initialize = async function() {
 };
 
 module.exports = store;
+// =============================================================
+// [PATCH 商品序列化]
+// 目标：
+//  1) 所有读取到的商品 categoryId 统一为 {_id, name, icon} 对象
+//  2) images / mainImage 字段标准化
+//  3) 注入本地可渲染的 emoji SVG 渐变占位图，避免外链失效
+// =============================================================
+
+// 预先生成每个分类对应的「分类ID → emoji」映射，用于占位图渲染
+MemoryStore.prototype._categoryEmojiMap = function () {
+  const map = {};
+  for (const c of this.categories.values()) {
+    map[c._id] = c.icon || '📦';
+  }
+  return map;
+};
+
+// 根据商品生成一张稳定的 SVG emoji 渐变占位图（内嵌 data:image/svg+xml，不依赖网络）
+// 优点：不跨域、不重定向、一定能显示、颜色与商品id稳定绑定
+function buildEmojiPlaceholder(product, fallbackEmoji = '📦') {
+  // 用商品名哈希确定两个渐变颜色
+  let hash = 0;
+  const str = product._id + product.name;
+  for (let i = 0; i < str.length; i++) hash = ((hash << 5) - hash) + str.charCodeAt(i);
+  hash = Math.abs(hash);
+  const hues = [hash % 360, (hash * 7 % 360)];
+  const emoji = fallbackEmoji;
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">' +
+    '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">' +
+    '<stop offset="0%" stop-color="hsl(' + hues[0] + ',70%,60%)"/>' +
+    '<stop offset="100%" stop-color="hsl(' + hues[1] + ',75%,40%)"/>' +
+    '</linearGradient></defs>' +
+    '<rect width="400" height="400" fill="url(#g)"/>' +
+    '<text x="200" y="220" font-size="160" text-anchor="middle" dominant-baseline="central">' + emoji + '</text>' +
+    '<text x="200" y="360" font-size="14" text-anchor="middle" fill="rgba(255,255,255,0.85)">宝宝商城 · 商品图</text>' +
+    '</svg>';
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+}
+
+MemoryStore.prototype._serializeProduct = function (product) {
+  if (!product) return product;
+  const p = { ...product };
+  const catMap = this._categoryEmojiMap();
+
+  // 1) categoryId 规范化
+  const rawCat = p.categoryId;
+  let catObj;
+  if (!rawCat) {
+    // 兜底：挑第一个分类
+    const anyCat = Array.from(this.categories.values())[0];
+    catObj = anyCat ? { _id: anyCat._id, name: anyCat.name, icon: anyCat.icon } : { _id: '', name: '未分类', icon: '📦' };
+  } else if (typeof rawCat === 'string') {
+    const c = this.categories.get(rawCat) ||
+              Array.from(this.categories.values()).find(x => x._id === rawCat);
+    catObj = c ? { _id: c._id, name: c.name, icon: c.icon } : { _id: rawCat, name: '未分类', icon: '📦' };
+  } else if (rawCat && typeof rawCat === 'object') {
+    catObj = { _id: rawCat._id, name: rawCat.name || '未分类', icon: rawCat.icon || '📦' };
+  } else {
+    catObj = { _id: String(rawCat), name: '未分类', icon: '📦' };
+  }
+  p.categoryId = catObj;
+
+  // 2) images 规范化
+  const placeholder = buildEmojiPlaceholder(p, catObj.icon || '📦');
+  const mainSrc = p.mainImage || (p.images && p.images[0]);
+  const imgList = Array.isArray(p.images) ? p.images.filter(Boolean) : [];
+  if (mainSrc && !imgList.includes(mainSrc)) imgList.unshift(mainSrc);
+
+  // 每个商品至少 4 张图：先用已有 + 末尾补占位（保证缩略图不会空）
+  while (imgList.length < 4) imgList.push(placeholder);
+  p.images = imgList;
+  p.mainImage = imgList[0];
+  p._placeholderImage = placeholder;  // 给前端 fallback 做参考（或直接用最后一张）
+
+  // 3) SKU 默认至少一条
+  if (!p.skus || !p.skus.length) {
+    p.skus = [{
+      skuCode: 'SKU-' + (p._id || 'DEF').slice(-6),
+      price: p.price || 0,
+      originalPrice: p.originalPrice || p.price,
+      stock: 99,
+      specCombination: []
+    }];
+  }
+  // 保证 SKU 字段存在
+  p.specs = p.specs || [];
+  p.tags = Array.isArray(p.tags) ? p.tags : ['热销', '包邮'];
+  p.salesCount = typeof p.salesCount === 'number' ? p.salesCount : 0;
+  p.viewCount = typeof p.viewCount === 'number' ? p.viewCount : 0;
+  p.favoriteCount = typeof p.favoriteCount === 'number' ? p.favoriteCount : 0;
+  p.price = typeof p.price === 'number' ? p.price : 0;
+  if (!p.originalPrice) p.originalPrice = p.price;
+
+  return p;
+};
+
+// 包装原方法
+const _origCreateProduct = MemoryStore.prototype.createProduct;
+MemoryStore.prototype.createProduct = async function (...args) {
+  const p = await _origCreateProduct.apply(this, args);
+  return this._serializeProduct(p);
+};
+
+const _origGetProductById = MemoryStore.prototype.getProductById;
+MemoryStore.prototype.getProductById = async function (...args) {
+  const p = await _origGetProductById.apply(this, args);
+  return this._serializeProduct(p);
+};
+
+const _origGetAllProducts = MemoryStore.prototype.getAllProducts;
+MemoryStore.prototype.getAllProducts = async function (...args) {
+  const res = await _origGetAllProducts.apply(this, args);
+  if (res && res.list) {
+    res.list = res.list.map(p => this._serializeProduct(p));
+  }
+  return res;
+};
+
+const _origGetRecommended = MemoryStore.prototype.getRecommendedProducts;
+MemoryStore.prototype.getRecommendedProducts = async function (...args) {
+  const list = await _origGetRecommended.apply(this, args);
+  return list.map(p => this._serializeProduct(p));
+};

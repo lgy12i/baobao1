@@ -1,0 +1,87 @@
+# 03-mongo.yaml
+# 面试讲解：
+#   数据库使用 StatefulSet（Deployment 不适合），原因：
+#   ① 稳定的 Pod 名 + DNS（taotao-mongo-0.taotao-mongo-headless）
+#   ② 稳定的 PVC 绑定，Pod 被重建后数据还在
+#   ③ 后续升级为 MongoDB ReplicaSet（多副本）非常顺畅
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: taotao-mongo
+  namespace: taotao-mall
+spec:
+  serviceName: taotao-mongo-headless
+  replicas: 1                              # 生产至少 3 副本
+  selector: { matchLabels: { app: taotao-mongo } }
+  template:
+    metadata: { labels: { app: taotao-mongo } }
+    spec:
+      securityContext:
+        runAsUser: 999                      # mongo 镜像默认用户 999，避免权限问题
+        fsGroup: 999
+      containers:
+        - name: mongo
+          image: mongo:7.0.14-jammy
+          imagePullPolicy: IfNotPresent
+          args:
+            - --auth
+            - --wiredTigerCacheSizeGB=1
+          ports: [ { containerPort: 27017, name: mongo } ]
+          env:
+            - name: MONGO_INITDB_ROOT_USERNAME
+              valueFrom: { secretKeyRef: { name: taotao-secret, key: MONGO_ROOT_USER } }
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              valueFrom: { secretKeyRef: { name: taotao-secret, key: MONGO_ROOT_PASS } }
+            - name: MONGO_INITDB_DATABASE
+              valueFrom: { configMapKeyRef: { name: taotao-config, key: MONGO_DB } }
+          volumeMounts:
+            - name: data
+              mountPath: /data/db
+          resources:
+            requests: { cpu: 200m, memory: 512Mi }
+            limits:   { cpu: "2",  memory: 3Gi }
+          readinessProbe:
+            exec:
+              command:
+                - mongosh
+                - --quiet
+                - -u
+                - $(MONGO_INITDB_ROOT_USERNAME)
+                - -p
+                - $(MONGO_INITDB_ROOT_PASSWORD)
+                - --eval
+                - db.adminCommand('ping').ok==1
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["mongosh", "--quiet", "-u", "$(MONGO_INITDB_ROOT_USERNAME)", "-p", "$(MONGO_INITDB_ROOT_PASSWORD)", "--eval", "db.adminCommand('ping').ok==1"]
+            initialDelaySeconds: 60
+            periodSeconds: 30
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: taotao-mongo-pvc }
+---
+# Headless Service —— StatefulSet 必须有
+apiVersion: v1
+kind: Service
+metadata:
+  name: taotao-mongo-headless
+  namespace: taotao-mall
+spec:
+  clusterIP: None
+  selector: { app: taotao-mongo }
+  ports: [ { port: 27017, targetPort: mongo } ]
+---
+# 常规 Service（给后端直连）
+apiVersion: v1
+kind: Service
+metadata:
+  name: taotao-mongo
+  namespace: taotao-mall
+spec:
+  selector: { app: taotao-mongo }
+  ports: [ { port: 27017, targetPort: mongo, name: mongo } ]
+  type: ClusterIP

@@ -1,0 +1,55 @@
+# 04-redis.yaml
+# 面试讲解：
+#   Redis 用普通 Deployment + PVC 即可（单实例模式）
+#   生产一般用 Redis Sentinel / Redis Cluster（本项目面试时说后续会升级）
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taotao-redis
+  namespace: taotao-mall
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: taotao-redis } }
+  strategy: { type: Recreate }           # Redis 只允许单副本挂，更新时直接干掉再起
+  template:
+    metadata: { labels: { app: taotao-redis } }
+    spec:
+      containers:
+        - name: redis
+          image: redis:7.2-alpine
+          args:
+            - redis-server
+            - --requirepass
+            - "$(REDIS_PASSWORD)"
+            - --appendonly yes
+            - --appendfsync everysec
+            - --maxmemory 512mb
+            - --maxmemory-policy allkeys-lru
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom: { secretKeyRef: { name: taotao-secret, key: REDIS_PASSWORD } }
+          ports: [ { containerPort: 6379, name: redis } ]
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits:   { cpu: 500m, memory: 1Gi }
+          readinessProbe:
+            exec: { command: ["redis-cli", "-a", "$(REDIS_PASSWORD)", "--no-auth-warning", "ping"] }
+            initialDelaySeconds: 10
+            periodSeconds: 15
+      volumes:
+        - name: redis-data
+          persistentVolumeClaim: { claimName: taotao-redis-pvc }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: taotao-redis
+  namespace: taotao-mall
+spec:
+  selector: { app: taotao-redis }
+  ports: [ { port: 6379, targetPort: redis } ]
+  type: ClusterIP

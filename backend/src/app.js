@@ -1,8 +1,12 @@
-/**
- * 应用入口文件（内存存储版本）
+﻿/**
+ * 应用入口文件（内存存储版本 + AI 助手 + 扩展商品）
  *
  * 使用内存存储作为降级方案，无需 MongoDB 和 Redis 也能运行
  * 适用于快速开发和功能验证场景
+ *
+ * 新增（霓虹潮流版）：
+ *  - /api/v1/ai/*   AI 智能客服（RAG 知识库 + OpenAI 兼容大模型）
+ *  - 启动时调用 seed-extra 追加咒术回战周边等扩展商品
  */
 
 require('dotenv').config();
@@ -22,10 +26,14 @@ const productRoutes = require('./routes/product.routes');
 const cartRoutes = require('./routes/cart.routes');
 const orderRoutes = require('./routes/order.routes');
 const userRoutes = require('./routes/user.routes');
+const aiRoutes = require('./routes/ai.routes');
 const { categoryRouter } = require('./controllers/product.controller');
 
 // 导入错误处理中间件
 const { errorHandler, notFoundHandler } = require('./middleware/error.middleware');
+
+// 导入扩展 seed（咒术回战周边 + 多品类商品）
+const seedExtra = require('./scripts/seed-extra');
 
 // 初始化 Express 应用
 const app = express();
@@ -33,9 +41,13 @@ const app = express();
 /**
  * 安全中间件配置
  */
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: { policy: 'cross-origin' }
+}));
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
+  origin: process.env.CLIENT_URL || true,
   credentials: true
 }));
 
@@ -69,6 +81,7 @@ app.use('/api/v1/categories', categoryRouter);
 app.use('/api/v1/cart', cartRoutes);
 app.use('/api/v1/orders', orderRoutes);
 app.use('/api/v1/user', userRoutes);
+app.use('/api/v1/ai', aiRoutes);
 
 /**
  * 健康检查接口
@@ -78,9 +91,34 @@ app.get('/health', (req, res) => {
     status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    storage: 'memory'
+    storage: 'memory',
+    ai: !!process.env.AI_API_KEY,
+    version: '2.0-neon'
   });
 });
+
+/**
+ * 生产环境：托管前端 Vite 构建产物（同源部署，无跨域）
+ * Render / Docker / K8s 部署时，前端 npm run build 后 dist 复制到 backend/../frontend/dist
+ */
+const frontendDist = path.join(__dirname, '../../frontend/dist');
+const fs = require('fs');
+if (process.env.NODE_ENV === 'production' && fs.existsSync(frontendDist)) {
+  app.use(express.static(frontendDist, {
+    maxAge: '1y',
+    immutable: true,
+    index: false
+  }));
+  // /assets/* 静态资源已被上面托管
+  // SPA 路由兜底：所有未匹配的 GET 请求返回 index.html
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api/') || req.path.startsWith('/uploads/') || req.path.startsWith('/health')) {
+      return next();
+    }
+    res.sendFile(path.join(frontendDist, 'index.html'));
+  });
+  console.log('✓ 前端静态文件托管已启用 (' + frontendDist + ')');
+}
 
 /**
  * 错误处理中间件
@@ -96,12 +134,14 @@ const PORT = process.env.PORT || 3000;
 async function startServer() {
   try {
     console.log('═══════════════════════════════════════════');
-    console.log('  宝宝商城后端服务启动中...');
-    console.log('  (使用内存存储模式，无需 MongoDB/Redis)');
+    console.log('  ✨ 宝宝商城 · 霓虹潮流版 启动中...');
+    console.log('  (内存存储 + AI 助手 + RAG 知识库)');
     console.log('═══════════════════════════════════════════\n');
 
     // 显式初始化内存数据（确保 seedData 完成后再检查）
     await store.initialize();
+    // 追加扩展商品（咒术回战周边 + 多品类）
+    await seedExtra(store);
 
     const userCount = (await store.findUserByAccount('testuser')) ? 1 : 0;
     console.log(`✓ 内存存储已初始化`);
@@ -109,11 +149,24 @@ async function startServer() {
     console.log(`  - 商品：${store.products.size} 个`);
     console.log(`  - 测试账号：testuser / Test123456\n`);
 
+    // AI 状态
+    const aiEnabled = !!process.env.AI_API_KEY || !!process.env.AI_FALLBACK_KEY;
+    console.log(`✓ AI 助手: ${aiEnabled ? '已启用 (' + (process.env.AI_MODEL || 'qwen-max') + ')' : '未配置 API Key，将使用知识库兜底'}`);
+    if (aiEnabled) {
+      console.log(`  - 主模型: ${process.env.AI_BASE_URL || 'https://dashscope.aliyuncs.com/compatible-mode/v1'} → ${process.env.AI_MODEL || 'qwen-max'}`);
+      if (process.env.AI_FALLBACK_KEY) {
+        console.log(`  - 备用:  ${process.env.AI_FALLBACK_BASE || 'https://api.deepseek.com/v1'} → ${process.env.AI_FALLBACK_MODEL || 'deepseek-chat'}`);
+      }
+    }
+    console.log('');
+
     // 启动 HTTP 服务
     app.listen(PORT, () => {
       console.log(`✓ 服务器启动成功！`);
       console.log(`  - API 地址: http://localhost:${PORT}`);
       console.log(`  - 健康检查: http://localhost:${PORT}/health`);
+      console.log(`  - AI 状态: http://localhost:${PORT}/api/v1/ai/status`);
+      console.log(`  - AI 问答: POST http://localhost:${PORT}/api/v1/ai/chat`);
       console.log(`  - 环境: ${process.env.NODE_ENV || 'development'}`);
       console.log(`\n  测试登录接口:`);
       console.log(`  POST http://localhost:${PORT}/api/v1/auth/login`);

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 商品 API 服务
  */
 import { api } from './api';
@@ -70,12 +70,28 @@ export interface Category {
   children?: Category[];
 }
 
+// 过滤空字符串 / undefined / null 参数，避免后端校验报 "categoryId is not allowed to be empty"
+function cleanParams(obj: any) {
+  if (!obj) return undefined;
+  const out: any = {};
+  for (const k of Object.keys(obj)) {
+    const v = obj[k];
+    if (v === undefined || v === null || v === '') continue;
+    if (typeof v === 'number' && isNaN(v)) continue;
+    out[k] = v;
+  }
+  // 至少保留 page / limit，避免后端报错
+  if (out.page === undefined) out.page = 1;
+  if (out.limit === undefined) out.limit = 20;
+  return out;
+}
+
 export const productApi = {
   /**
    * 获取商品列表
    */
   getProducts: (params?: ProductListParams) => {
-    return api.get<any, ProductListResponse>('/products', params);
+    return api.get<any, ProductListResponse>('/products', cleanParams(params));
   },
 
   /**
@@ -99,3 +115,4 @@ export const productApi = {
     return api.get<any, Category[]>(`/categories`, { tree });
   }
 };
+

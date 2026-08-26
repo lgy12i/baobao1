@@ -2,101 +2,108 @@
 @tailwind components;
 @tailwind utilities;
 
-/* 全局基础样式 */
-@layer base {
-  html {
-    scroll-behavior: smooth;
-  }
-  
-  body {
-    @apply bg-gray-50 text-gray-800 antialiased;
-    font-family: 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
-  }
+/* ============================================
+ * 宝宝商城 · 霓虹潮流主题全局样式
+ * 融合 淘宝/拼多多/京东 三家电商特色
+ * ============================================ */
 
-  /* 自定义滚动条 */
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-
-  ::-webkit-scrollbar-track {
-    @apply bg-gray-100;
-  }
-
-  ::-webkit-scrollbar-thumb {
-    @apply bg-gray-300 rounded-full;
-  }
-
-  ::-webkit-scrollbar-thumb:hover {
-    @apply bg-gray-400;
-  }
+:root {
+  --bg-primary:   #0f172a;
+  --bg-secondary:  #020617;
+  --neon-pink:    #ff2b81;
+  --neon-cyan:    #22d3ee;
+  --neon-purple:  #8b5cf6;
+  --text-primary:   #f8fafc;
+  --text-secondary: #94a3b8;
 }
 
-/* 自定义组件样式 */
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at 15% 20%, rgba(255, 43, 129, 0.10), transparent 40%),
+    radial-gradient(circle at 85% 80%, rgba(34, 211, 238, 0.10), transparent 40%),
+    var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 滚动条霓虹 */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--bg-secondary); }
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--neon-pink), var(--neon-cyan));
+  border-radius: 4px;
+}
+
 @layer components {
-  .btn-primary {
-    @apply bg-primary-500 hover:bg-primary-600 text-white font-medium py-2 px-4 rounded-lg transition-all duration-200 active:scale-95;
+  /* 玻璃拟态容器 */
+  .glass {
+    @apply bg-white/5 backdrop-blur-xl border border-white/10;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255,255,255,0.08);
+  }
+  .glass-card {
+    @apply glass rounded-2xl transition-all duration-300;
+  }
+  .glass-card:hover {
+    @apply border-primary-400/40;
+    box-shadow: 0 8px 24px rgba(255, 43, 129, 0.18), 0 0 30px rgba(255, 43, 129, 0.15);
   }
 
+  /* 霓虹按钮 */
+  .btn-neon {
+    @apply relative px-5 py-2.5 rounded-xl font-medium text-white
+           bg-neon-gradient shadow-neon-soft transition-all duration-300
+           hover:shadow-neon hover:-translate-y-0.5 active:translate-y-0;
+  }
   .btn-outline {
-    @apply border border-gray-300 hover:border-primary-500 hover:text-primary-500 text-gray-700 font-medium py-2 px-4 rounded-lg transition-all duration-200 active:scale-95;
+    @apply px-5 py-2.5 rounded-xl font-medium border border-white/20 text-white
+           hover:border-primary-400 hover:bg-white/5 transition;
+  }
+  .btn-flame {
+    @apply px-5 py-2.5 rounded-xl font-medium text-white
+           bg-flame-gradient shadow-lg shadow-flame-500/30 hover:-translate-y-0.5 transition;
   }
 
-  .card {
-    @apply bg-white rounded-lg shadow-card hover:shadow-card-hover transition-shadow duration-200 overflow-hidden;
+  /* 霓虹文字 */
+  .text-neon {
+    @apply bg-clip-text text-transparent bg-neon-gradient;
+  }
+  .text-glow {
+    text-shadow: 0 0 12px rgba(255, 43, 129, 0.6);
   }
 
-  .input-field {
-    @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200;
+  /* 霓虹分割线 */
+  .divider-neon {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--neon-pink), var(--neon-cyan), transparent);
   }
 
-  .price-tag {
-    @apply text-primary-500 font-bold;
+  /* 标签徽章 */
+  .badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium;
   }
-}
+  .badge-new    { @apply badge bg-neon-500/20 text-neon-300 border border-neon-500/40; }
+  .badge-hot    { @apply badge bg-primary-500/20 text-primary-300 border border-primary-500/40; }
+  .badge-sale   { @apply badge bg-flame-500/20 text-flame-300 border border-flame-500/40; }
+  .badge-ship   { @apply badge bg-emerald-500/20 text-emerald-300 border border-emerald-500/40; }
 
-/* 动画效果 */
-@layer utilities {
-  .animate-fade-in {
-    animation: fadeIn 0.3s ease-out;
+  /* 输入框 */
+  .input-neon {
+    @apply w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white
+           placeholder:text-white/30 focus:outline-none focus:border-primary-400
+           focus:shadow-neon-soft transition;
   }
 
-  .animate-slide-up {
-    animation: slideUp 0.4s ease-out;
-  }
-
-  .animate-scale-in {
-    animation: scaleIn 0.2s ease-out;
-  }
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes scaleIn {
-  from {
-    opacity: 0;
-    transform: scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
+  /* shimmer 加载态 */
+  .shimmer-bg {
+    background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%);
+    background-size: 200% 100%;
+    @apply animate-shimmer;
   }
 }
