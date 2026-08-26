@@ -1,0 +1,153 @@
+# =============================================================
+# 宝宝商城 · docker-compose.yml
+# 一键拉起 5 个服务：
+#   1. mongo     → 商品/订单等主数据库（持久化卷挂载）
+#   2. redis     → 缓存 / JWT 黑名单 / 购物车（持久化卷挂载）
+#   3. backend   → Node.js + Express 后端服务
+#   4. frontend  → Nginx 承载 React 静态资源，并把 /api 反代到 backend
+#   5. mongo-init → 首次启动执行 seed 脚本（可选）
+#
+# 面试讲解要点：
+#   ① 服务依赖关系用 depends_on + condition: service_healthy 保障顺序
+#   ② 网络拆分为 front-tier（对外 nginx） + back-tier（仅内部）
+#   ③ 敏感信息不硬编码，用 .env + environment 变量注入
+#   ④ Named volumes 做数据持久化，容器销毁不丢数据
+# =============================================================
+
+services:
+
+  # =============================
+  # 1) MongoDB —— 主数据库
+  # =============================
+  mongo:
+    image: mongo:7.0.14-jammy
+    container_name: taotao-mongo
+    restart: unless-stopped
+    command:
+      - --wiredTigerCacheSizeGB=1            # 开发环境限制内存，OOM 友好
+      - --auth                             # 开启鉴权（生产必开）
+    environment:
+      # 首次启动时自动创建管理员用户（仅在数据卷为空时生效）
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-root}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASS:-taotao_root_pwd_2026}
+      MONGO_INITDB_DATABASE: ${MONGO_DB:-taotao_mall}
+    volumes:
+      - taotao-mongo-data:/data/db          # 持久化数据目录
+      - ./deploy/mongo-init:/docker-entrypoint-initdb.d:ro   # 首次启动 init 脚本
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "-u", "${MONGO_ROOT_USER:-root}", "-p", "${MONGO_ROOT_PASS:-taotao_root_pwd_2026}", "--eval", "db.adminCommand('ping').ok"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - back-tier
+    ports:
+      - "27017:27017"                       # 开发时可用 Compass 直连，生产删掉
+
+
+  # =============================
+  # 2) Redis —— 缓存 / 会话
+  # =============================
+  redis:
+    image: redis:7.2-alpine
+    container_name: taotao-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+        --requirepass ${REDIS_PASSWORD:-taotao_redis_pwd_2026}
+        --appendonly yes                   # AOF 持久化，比 RDB 数据更安全
+        --appendfsync everysec
+        --maxmemory 512mb
+        --maxmemory-policy allkeys-lru     # 超过内存走 LRU 淘汰
+    volumes:
+      - taotao-redis-data:/data            # AOF/RDB 持久化目录
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-taotao_redis_pwd_2026}", "--no-auth-warning", "ping"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - back-tier
+    ports:
+      - "6379:6379"                        # 开发调试，生产删掉
+
+
+  # =============================
+  # 3) 后端服务 —— Node.js + Express
+  # =============================
+  backend:
+    build:
+      context: .                           # 构建上下文是项目根（Dockerfile.backend 里 COPY backend ...）
+      dockerfile: ./deploy/Dockerfile.backend
+    container_name: taotao-backend
+    restart: unless-stopped
+    depends_on:
+      mongo: { condition: service_healthy } # 等 MongoDB 健康再启
+      redis: { condition: service_healthy } # 等 Redis 健康再启
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      # DB URI：用户/密码/DB 名与 mongo 服务保持一致
+      MONGODB_URI: mongodb://${MONGO_ROOT_USER:-root}:${MONGO_ROOT_PASS:-taotao_root_pwd_2026}@mongo:27017/${MONGO_DB:-taotao_mall}?authSource=admin
+      # Redis URI：格式 redis://:PASSWORD@host:port
+      REDIS_URL: redis://:${REDIS_PASSWORD:-taotao_redis_pwd_2026}@redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-taotao-mall-jwt-secret-change-me!}
+      JWT_EXPIRES_IN: 7d
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-sk_test_xxx}
+      UPLOAD_PATH: /app/uploads
+    volumes:
+      - taotao-uploads:/app/uploads          # 上传文件持久化
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - back-tier
+      - front-tier
+    expose:
+      - "3000"
+
+
+  # =============================
+  # 4) 前端 —— Nginx 承载 SPA + /api 反代
+  # =============================
+  frontend:
+    build:
+      context: .
+      dockerfile: ./deploy/Dockerfile.frontend
+    container_name: taotao-frontend
+    restart: unless-stopped
+    depends_on:
+      backend: { condition: service_healthy }  # nginx.conf 反代需要 backend 已就绪
+    ports:
+      - "8080:80"                              # 对外唯一入口：浏览器直接访问 http://IP:8080
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - front-tier
+
+
+# =============================
+# 命名卷（docker-compose down -v 才会删）
+# =============================
+volumes:
+  taotao-mongo-data:
+  taotao-redis-data:
+  taotao-uploads:
+
+# =============================
+# 网络：前后分离，避免数据库被前端直连
+# =============================
+networks:
+  front-tier:
+    driver: bridge
+  back-tier:
+    driver: bridge
+    internal: false            # 开发设置为 false（方便调试）；生产可 true 隔离外部
