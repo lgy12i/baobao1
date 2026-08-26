@@ -1,0 +1,60 @@
+# 07-ingress.yaml
+# 面试讲解：
+#   Ingress Controller 是唯一出口（比如 nginx-ingress），对外暴露 80/443
+#   统一做 TLS 终止 / 限频 / 白名单 / CDN 回源
+#   本地 K3s 可用 traefik / nginx ingress，生产常用 ALB + WAF
+#
+# 这里提供两种路径：
+#   A) 一个域名，前端 / 后端 API 都走它（推荐）
+#   B) 两个域名，前端 domain，后端 api.domain（按需）
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: taotao-ingress
+  namespace: taotao-mall
+  annotations:
+    # 使用哪种 ingress-controller 就填对应的 class，nginx 最通用
+    kubernetes.io/ingress.class: "nginx"
+    # --- HTTPS 自动重定向 ---
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # --- 后端 API 长请求时间 ---
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+    # --- 限频：每个 IP 每秒 100 req ---
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "3"
+    # --- body 大小（上传商品图片） ---
+    nginx.ingress.kubernetes.io/proxy-body-size: "20m"
+    # --- gzip ---
+    nginx.ingress.kubernetes.io/use-gzip: "true"
+    # --- 证书（cert-manager 自动签发的 Secret 名） ---
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+    - hosts:
+        - baobao.lgy12i.com
+        # - api.baobao.lgy12i.com            # B 方案放开
+      secretName: taotao-tls-cert            # 证书来源：cert-manager 自动 / kubectl create
+  rules:
+    - host: baobao.lgy12i.com
+      http:
+        paths:
+          # ① /api /uploads 先反代到后端 Service
+          - path: /api
+            pathType: Prefix
+            backend: { service: { name: taotao-backend, port: { number: 3000 } } }
+          - path: /uploads
+            pathType: Prefix
+            backend: { service: { name: taotao-backend, port: { number: 3000 } } }
+          # ② 其他路径走前端 Nginx（包含 SPA fallback 兜底在 nginx.conf）
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: taotao-frontend, port: { number: 80 } } }
+    # ---- 方案 B：后端用独立域名（可选放开）----
+    # - host: api.baobao.lgy12i.com
+    #   http:
+    #     paths:
+    #       - path: /
+    #         pathType: Prefix
+    #         backend: { service: { name: taotao-backend, port: { number: 3000 } } }
