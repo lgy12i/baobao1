@@ -1,0 +1,64 @@
+# 06-frontend.yaml
+# 面试讲解：
+#   Nginx 是 IO 密集型，100m CPU 足够抗高并发
+#   反代 /api → taotao-backend:3000，直接基于 Service 域名通信
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taotao-frontend
+  namespace: taotao-mall
+  labels: { app: taotao-frontend }
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }
+  selector: { matchLabels: { app: taotao-frontend } }
+  template:
+    metadata: { labels: { app: taotao-frontend } }
+    spec:
+      containers:
+        - name: frontend
+          image: docker.io/lgy12i/baobao-frontend:latest
+          imagePullPolicy: IfNotPresent
+          ports: [ { containerPort: 80, name: http } ]
+          resources:
+            requests: { cpu: 100m, memory: 64Mi }
+            limits:   { cpu: 500m, memory: 256Mi }
+          readinessProbe:
+            httpGet: { path: /, port: 80 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /, port: 80 }
+            initialDelaySeconds: 15
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: taotao-frontend
+  namespace: taotao-mall
+spec:
+  selector: { app: taotao-frontend }
+  ports: [ { port: 80, targetPort: http } ]
+  type: ClusterIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: taotao-frontend-hpa
+  namespace: taotao-mall
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: taotao-frontend
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 70 }
