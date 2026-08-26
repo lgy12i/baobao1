@@ -1,0 +1,53 @@
+# =============================================================
+# Render Blueprint · 宝宝商城单服务部署
+# =============================================================
+# 架构：
+#   一个 Web Service 同时托管：
+#     - 前端 Vite 构建产物（静态文件）
+#     - 后端 Express API
+#   同源部署，避免跨域问题，节省免费额度
+#
+# 部署后访问：
+#   https://baobao-mall.onrender.com
+#     ├── /api/v1/*   → 后端 API
+#     ├── /uploads/*  → 后端静态资源
+#     ├── /health     → 健康检查
+#     └── /*          → 前端 SPA
+# =============================================================
+services:
+  - type: web
+    name: baobao-mall
+    runtime: node
+    plan: free
+    region: singapore
+    branch: main
+    rootDir: .
+    buildCommand: bash render-build.sh
+    startCommand: node backend/src/app.js
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: CLIENT_URL
+        value: "*"
+      # ===== AI 配置（在 Render 控制台手动填入真实值）=====
+      - key: AI_API_KEY
+        sync: false
+      - key: AI_BASE_URL
+        value: https://dashscope.aliyuncs.com/compatible-mode/v1
+      - key: AI_MODEL
+        value: qwen-max
+      - key: AI_FALLBACK_KEY
+        sync: false
+      - key: AI_FALLBACK_BASE
+        value: https://api.deepseek.com/v1
+      - key: AI_FALLBACK_MODEL
+        value: deepseek-chat
+      # ===== JWT 密钥（请改成你自己的随机串）=====
+      - key: JWT_SECRET
+        value: baobao-mall-jwt-secret-render-2026
+      - key: JWT_EXPIRES_IN
+        value: 7d
