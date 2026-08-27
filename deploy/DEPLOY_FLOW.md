@@ -1,6 +1,6 @@
 # 宝宝商城 · 容器化与部署流程总结
 
-> 项目仓库：https://github.com/lgy12i/baobao
+> 项目仓库：https://github.com/lgy12i/baobao2
 > 文档目标：用一张流程图 + 分阶段步骤，说清楚"个人全栈电商项目如何与 Docker / Kubernetes / GitHub Actions 结合，从代码到上线"。
 
 ---

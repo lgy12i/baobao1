@@ -304,5 +304,223 @@ module.exports = async function seedExtra(store) {
     if (!exists) await store.createProduct(p);
   }
 
-  console.log(`  ✓ 扩展数据已加载：咒术回战周边 ${jjkProducts.length} 件，其他商品 ${extraProducts.length} 件`);
+  // ============ 第三轮：更多品类扩展 ============
+  const moreProducts = [
+    // 潮玩盲盒
+    {
+      name: 'POP MART Skullpanda 密林古堡系列盲盒',
+      brand: 'POP MART',
+      description: 'Skullpanda密林古堡系列盲盒，12款+1隐藏款，做工精致，收藏佳品。',
+      categoryId: catByName('二次元周边')?._id,
+      price: 59, originalPrice: 79,
+      mainImage: 'https://images.unsplash.com/photo-1612036782180-6f0b6cd8b4c5?w=400',
+      tags: ['新品', '热销', '盲盒'], salesCount: 15623,
+      skus: [{ skuCode: 'PM-001', price: 59, stock: 500, specCombination: [{ name: '款式', value: '随机' }] }],
+      specs: [{ name: '款式', values: ['随机', '整套12盒'] }]
+    },
+    {
+      name: '泡泡玛特 DIMOO 太空旅行系列盲盒',
+      brand: 'POP MART',
+      description: 'DIMOO太空旅行系列盲盒，可爱治愈系，附赠卡片。',
+      categoryId: catByName('二次元周边')?._id,
+      price: 59, originalPrice: 79,
+      mainImage: 'https://images.unsplash.com/photo-1582142306909-195724d33ffc?w=400',
+      tags: ['热销', '盲盒'], salesCount: 8923,
+      skus: [{ skuCode: 'PM-002', price: 59, stock: 300, specCombination: [{ name: '款式', value: '随机' }] }],
+      specs: [{ name: '款式', values: ['随机', '整套12盒'] }]
+    },
+    // 数码配件
+    {
+      name: 'Anker 安克 65W GaN快充充电器 三口',
+      brand: 'Anker',
+      description: 'Anker 65W GaN氮化镓快充充电器，三口输出，支持PD/QC协议，MacBook/iPhone/Android通吃。',
+      categoryId: catByName('数码电器')?._id,
+      price: 199, originalPrice: 299,
+      mainImage: 'https://images.unsplash.com/photo-1583865654750-6e9a8b6d4e3f?w=400',
+      tags: ['新品', '热销', '快充'], salesCount: 4521,
+      skus: [{ skuCode: 'AK-001', price: 199, stock: 200, specCombination: [{ name: '功率', value: '65W' }] }],
+      specs: [{ name: '功率', values: ['30W', '45W', '65W', '100W'] }]
+    },
+    {
+      name: '绿联 Type-C 扩展坞 9合1 USB3.0',
+      brand: '绿联',
+      description: '绿联Type-C扩展坞，9合1接口，HDMI 4K输出，PD快充，千兆网口。',
+      categoryId: catByName('数码电器')?._id,
+      price: 159, originalPrice: 229,
+      mainImage: 'https://images.unsplash.com/photo-1625842241200-6f6d1b9c3b3e?w=400',
+      tags: ['热销', '包邮'], salesCount: 6789,
+      skus: [{ skuCode: 'UG-001', price: 159, stock: 150, specCombination: [{ name: '接口数', value: '9合1' }] }],
+      specs: [{ name: '接口数', values: ['6合1', '9合1', '12合1'] }]
+    },
+    // 智能穿戴
+    {
+      name: '华为 Watch GT4 蓝牙通话智能手表',
+      brand: '华为',
+      description: '华为Watch GT4，蓝宝石玻璃，14天续航，蓝牙通话，100+运动模式。',
+      categoryId: catByName('数码电器')?._id,
+      price: 1488, originalPrice: 1888,
+      mainImage: 'https://images.unsplash.com/photo-1546868871-704ed5a7d1c8?w=400',
+      tags: ['新品', '旗舰', '分期免息'], salesCount: 3214,
+      skus: [{ skuCode: 'HW-001', price: 1488, stock: 80, specCombination: [{ name: '表盘', value: '42mm' }] }],
+      specs: [{ name: '表盘', values: ['42mm', '46mm'] }, { name: '颜色', values: ['黑色', '棕色', '绿色'] }]
+    },
+    {
+      name: '小米手环8 NFC版 运动健康监测',
+      brand: '小米',
+      description: '小米手环8 NFC版，150+运动模式，心率血氧监测，NFC门禁公交。',
+      categoryId: catByName('数码电器')?._id,
+      price: 249, originalPrice: 299,
+      mainImage: 'https://images.unsplash.com/photo-1606220945150-460a8d9b6b1e?w=400',
+      tags: ['热销', '性价比'], salesCount: 12345,
+      skus: [{ skuCode: 'MB-001', price: 249, stock: 500, specCombination: [{ name: '版本', value: 'NFC版' }] }],
+      specs: [{ name: '版本', values: ['标准版', 'NFC版'] }]
+    },
+    // 家居生活
+    {
+      name: '戴森 V12 Detect Slim 无线吸尘器',
+      brand: 'Dyson',
+      description: '戴森V12 Detect Slim无线吸尘器，激光探测灰尘，LCD屏显，60分钟续航。',
+      categoryId: catByName('家居家装')?._id,
+      price: 4290, originalPrice: 4990,
+      mainImage: 'https://images.unsplash.com/photo-1558317374-854a8b1f6b0e?w=400',
+      tags: ['新品', '旗舰', '分期免息'], salesCount: 1234,
+      skus: [{ skuCode: 'DY-001', price: 4290, stock: 50, specCombination: [{ name: '版本', value: '标准版' }] }],
+      specs: []
+    },
+    {
+      name: '小米米家 智能电饭煲 3L IH加热',
+      brand: '小米',
+      description: '米家智能电饭煲3L，IH电磁加热，APP远程控制，24小时预约。',
+      categoryId: catByName('家居家装')?._id,
+      price: 399, originalPrice: 499,
+      mainImage: 'https://images.unsplash.com/photo-15855159592-8c5b1f5c8e3a?w=400',
+      tags: ['热销', '智能'], salesCount: 4567,
+      skus: [{ skuCode: 'MJ-001', price: 399, stock: 200, specCombination: [{ name: '容量', value: '3L' }] }],
+      specs: [{ name: '容量', values: ['3L', '4L', '5L'] }]
+    },
+    // 美妆护肤
+    {
+      name: '雅诗兰黛 小棕瓶 精华 50ml',
+      brand: '雅诗兰黛',
+      description: '雅诗兰黛第七代小棕瓶精华，修护肌肤，抗老化，50ml大瓶装。',
+      categoryId: catByName('美妆个护')?._id,
+      price: 850, originalPrice: 1080,
+      mainImage: 'https://images.unsplash.com/photo-1599733589047-1c1a8b59d9db?w=400',
+      tags: ['热销', '明星产品', '包邮'], salesCount: 8923,
+      skus: [{ skuCode: 'EL-001', price: 850, stock: 100, specCombination: [{ name: '规格', value: '50ml' }] }],
+      specs: [{ name: '规格', values: ['30ml', '50ml', '100ml'] }]
+    },
+    {
+      name: 'SK-II 神仙水 精华露 230ml',
+      brand: 'SK-II',
+      description: 'SK-II神仙水精华露，Pitera精华成分，改善肌肤纹理，提亮肤色。',
+      categoryId: catByName('美妆个护')?._id,
+      price: 1590, originalPrice: 1990,
+      mainImage: 'https://images.unsplash.com/photo-1571781926291-c477eb93db2e?w=400',
+      tags: ['热销', '旗舰', '分期免息'], salesCount: 3456,
+      skus: [{ skuCode: 'SK-001', price: 1590, stock: 60, specCombination: [{ name: '规格', value: '230ml' }] }],
+      specs: [{ name: '规格', values: ['75ml', '160ml', '230ml'] }]
+    },
+    // 运动健身
+    {
+      name: 'Lululemon Align 高腰瑜伽裤 25寸',
+      brand: 'Lululemon',
+      description: 'Lululemon Align高腰瑜伽裤，Nulu面料，裸感亲肤，25寸九分款。',
+      categoryId: catByName('运动户外')?._id,
+      price: 750, originalPrice: 950,
+      mainImage: 'https://images.unsplash.com/photo-1506629905438-63c1ba76a4e7?w=400',
+      tags: ['新品', '热销'], salesCount: 2345,
+      skus: [{ skuCode: 'LL-001', price: 750, stock: 100, specCombination: [{ name: '尺码', value: 'M' }] }],
+      specs: [{ name: '尺码', values: ['XS', 'S', 'M', 'L', 'XL'] }, { name: '颜色', values: ['黑色', '深灰', '藏青'] }]
+    },
+    {
+      name: 'Keep 智能跑步机 K1 家用静音',
+      brand: 'Keep',
+      description: 'Keep K1智能跑步机，静音电机，APP互联，自动调坡，折叠收纳。',
+      categoryId: catByName('运动户外')?._id,
+      price: 1999, originalPrice: 2699,
+      mainImage: 'https://images.unsplash.com/photo-1538805060514-8d10184ccc76?w=400',
+      tags: ['热销', '智能'], salesCount: 1567,
+      skus: [{ skuCode: 'KP-001', price: 1999, stock: 40, specCombination: [{ name: '版本', value: '标准版' }] }],
+      specs: []
+    },
+    // 图书
+    {
+      name: '《三体》三部曲 刘慈欣科幻套装',
+      brand: '重庆出版社',
+      description: '刘慈欣《三体》三部曲完整套装，含《三体》《黑暗森林》《死神永生》，雨果奖作品。',
+      categoryId: catByName('图书文娱')?._id,
+      price: 98, originalPrice: 128,
+      mainImage: 'https://images.unsplash.com/photo-1532012197267-da84d127e765?w=400',
+      tags: ['热销', '套装', '包邮'], salesCount: 6789,
+      skus: [{ skuCode: 'BK-002', price: 98, stock: 200, specCombination: [{ name: '套装', value: '三部曲' }] }],
+      specs: []
+    },
+    {
+      name: '《人类简史》+《未来简史》 尤瓦尔赫拉利套装',
+      brand: '中信出版社',
+      description: '尤瓦尔赫拉利《人类简史》+《未来简史》套装，全球畅销百万册。',
+      categoryId: catByName('图书文娱')?._id,
+      price: 78, originalPrice: 98,
+      mainImage: 'https://images.unsplash.com/photo-1535905557558-4486e3a1852e?w=400',
+      tags: ['热销', '包邮'], salesCount: 4567,
+      skus: [{ skuCode: 'BK-003', price: 78, stock: 150, specCombination: [] }],
+      specs: []
+    },
+    // 食品
+    {
+      name: '三只松鼠 每日坚果 30袋装',
+      brand: '三只松鼠',
+      description: '三只松鼠每日坚果30袋装，混合果仁，每日一袋，营养均衡。',
+      categoryId: catByName('食品生鲜')?._id,
+      price: 89.9, originalPrice: 129,
+      mainImage: 'https://images.unsplash.com/photo-1597304949098-9c8c38e0e6b8?w=400',
+      tags: ['热销', '包邮', '新鲜'], salesCount: 15678,
+      skus: [{ skuCode: 'SS-001', price: 89.9, stock: 500, specCombination: [{ name: '规格', value: '30袋' }] }],
+      specs: [{ name: '规格', values: ['15袋', '30袋', '60袋'] }]
+    },
+    {
+      name: '农夫山泉 东方树叶 茉莉花茶 500ml*15',
+      brand: '农夫山泉',
+      description: '东方树叶茉莉花茶，0糖0卡，天然茶叶萃取，500ml*15瓶整箱。',
+      categoryId: catByName('食品生鲜')?._id,
+      price: 59.9, originalPrice: 75,
+      mainImage: 'https://images.unsplash.com/photo-1606220945150-460a8d9b6b1e?w=400',
+      tags: ['热销', '整箱'], salesCount: 8923,
+      skus: [{ skuCode: 'NF-001', price: 59.9, stock: 300, specCombination: [{ name: '口味', value: '茉莉花茶' }] }],
+      specs: [{ name: '口味', values: ['茉莉花茶', '乌龙茶', '红茶', '绿茶'] }]
+    },
+    // 母婴
+    {
+      name: '布鲁可 大颗粒积木 百变工程车',
+      brand: '布鲁可',
+      description: '布鲁可大颗粒积木百变工程车系列，适合3-6岁儿童，锻炼动手能力。',
+      categoryId: catByName('母婴亲子')?._id,
+      price: 99, originalPrice: 149,
+      mainImage: 'https://images.unsplash.com/photo-1558060370-d6441cd4d06f?w=400',
+      tags: ['新品', '热销'], salesCount: 3456,
+      skus: [{ skuCode: 'BL-001', price: 99, stock: 200, specCombination: [{ name: '款式', value: '工程车' }] }],
+      specs: [{ name: '款式', values: ['工程车', '消防车', '警车'] }]
+    },
+    // 汽车用品
+    {
+      name: '小米 车载充电器 67W 双口快充',
+      brand: '小米',
+      description: '小米车载充电器67W双口快充，支持PD/QC协议，点烟器接口。',
+      categoryId: catByName('汽车用品')?._id,
+      price: 79, originalPrice: 99,
+      mainImage: 'https://images.unsplash.com/photo-1583865654750-6e9a8b6d4e3f?w=400',
+      tags: ['热销', '快充'], salesCount: 5678,
+      skus: [{ skuCode: 'MC-001', price: 79, stock: 300, specCombination: [{ name: '功率', value: '67W' }] }],
+      specs: [{ name: '功率', values: ['33W', '67W', '100W'] }]
+    }
+  ];
+
+  for (const p of moreProducts) {
+    if (!p.categoryId) continue;
+    const exists = Array.from(store.products.values()).find((x) => x.name === p.name);
+    if (!exists) await store.createProduct(p);
+  }
+
+  console.log(`  ✓ 扩展数据已加载：咒术回战周边 ${jjkProducts.length} 件，其他商品 ${extraProducts.length + moreProducts.length} 件，共计 ${jjkProducts.length + extraProducts.length + moreProducts.length} 件`);
 };

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 认证 API 服务
  */
 import { api } from './api';
@@ -16,6 +16,17 @@ export interface RegisterParams {
   confirmPassword: string;
 }
 
+export interface Address {
+  _id: string;
+  receiver: string;
+  phone: string;
+  province: string;
+  city: string;
+  district: string;
+  detail: string;
+  isDefault: boolean;
+}
+
 export interface UserInfo {
   id: string;
   username: string;
@@ -24,6 +35,7 @@ export interface UserInfo {
   phone?: string;
   avatar: string;
   role: string;
+  addresses?: Address[];
 }
 
 export interface AuthResponse {

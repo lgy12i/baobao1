@@ -115,4 +115,3 @@ export const productApi = {
     return api.get<any, Category[]>(`/categories`, { tree });
   }
 };
-

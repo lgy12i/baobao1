@@ -32,4 +32,10 @@ router.post('/recommend', aiController.recommend);
 // GET /api/v1/ai/status
 router.get('/status', aiController.status);
 
+// POST /api/v1/ai/intent - 意图识别
+router.post('/intent', aiController.intentRecognition);
+
+// POST /api/v1/ai/sentiment - 情感分析
+router.post('/sentiment', aiController.sentimentAnalysis);
+
 module.exports = router;

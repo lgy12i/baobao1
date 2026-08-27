@@ -178,6 +178,106 @@ async function recommend(req, res) {
   }
 }
 
+// ============ 意图识别 ============
+async function intentRecognition(req, res) {
+  try {
+    const { message = '' } = req.body || {};
+    if (!message) {
+      return res.status(400).json({ success: false, message: '缺少 message 参数' });
+    }
+
+    const intents = [
+      { type: 'product_inquiry',    keywords: ['商品', '价格', '多少钱', '有吗', '卖', '买'], desc: '商品咨询' },
+      { type: 'order_query',       keywords: ['订单', '物流', '快递', '到哪', '什么时候到'], desc: '订单查询' },
+      { type: 'after_sale',        keywords: ['退货', '退款', '换货', '售后', '维修', '坏了'], desc: '售后请求' },
+      { type: 'coupon_inquiry',    keywords: ['优惠券', '券', '满减', '折扣', '活动'], desc: '优惠咨询' },
+      { type: 'shipping_inquiry',  keywords: ['发货', '运费', '包邮', '配送', '快递'], desc: '物流咨询' },
+      { type: 'account_issue',     keywords: ['登录', '密码', '注册', '账号', '登不上'], desc: '账号问题' },
+      { type: 'recommendation',    keywords: ['推荐', '什么好', '买什么', '哪个好', '热销'], desc: '商品推荐' },
+      { type: 'complaint',         keywords: ['投诉', '差评', '假货', '骗', '坑', '不满意'], desc: '投诉建议' }
+    ];
+
+    const q = message.toLowerCase();
+    const scored = intents.map(intent => {
+      let score = 0;
+      for (const kw of intent.keywords) {
+        if (q.includes(kw)) score += kw.length;
+      }
+      return { ...intent, score };
+    });
+
+    const matched = scored.filter(i => i.score > 0).sort((a, b) => b.score - a.score);
+    const topIntent = matched[0] || { type: 'general', desc: '通用咨询' };
+
+    // RAG 检索
+    const hits = retrieve(message, 3);
+
+    return res.json({
+      success: true,
+      data: {
+        intent: topIntent.type,
+        description: topIntent.desc,
+        confidence: matched.length > 0 ? Math.min(1, matched[0].score / 20) : 0.3,
+        allMatched: matched.slice(0, 3).map(m => ({ type: m.type, desc: m.desc })),
+        ragHits: hits.map(h => h.id)
+      }
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+}
+
+// ============ 情感分析 ============
+async function sentimentAnalysis(req, res) {
+  try {
+    const { message = '' } = req.body || {};
+    if (!message) {
+      return res.status(400).json({ success: false, message: '缺少 message 参数' });
+    }
+
+    const positiveWords = ['满意', '喜欢', '好评', '棒', '赞', '好', '不错', '开心', '感谢', '谢谢', '给力', '牛', '优秀', '完美', '推荐'];
+    const negativeWords = ['差', '烂', '不满', '失望', '垃圾', '假货', '骗', '坑', '投诉', '退货', '坏了', '垃圾', '恶心', '气', '烦'];
+    const neutralWords = ['问', '查询', '怎么', '什么', '多少', '哪里', '是否', '能不能'];
+
+    const q = message.toLowerCase();
+    let posScore = 0, negScore = 0, neuScore = 0;
+
+    for (const w of positiveWords) { if (q.includes(w)) posScore += w.length; }
+    for (const w of negativeWords) { if (q.includes(w)) negScore += w.length; }
+    for (const w of neutralWords) { if (q.includes(w)) neuScore += w.length; }
+
+    const total = posScore + negScore + neuScore;
+    let sentiment, emoji, suggestion;
+
+    if (posScore > negScore && posScore > 0) {
+      sentiment = 'positive';
+      emoji = '😊';
+      suggestion = '感谢您的好评！如有其他问题随时联系我～';
+    } else if (negScore > posScore && negScore > 0) {
+      sentiment = 'negative';
+      emoji = '😟';
+      suggestion = '非常抱歉给您带来不好的体验，已为您标记优先处理，客服将在5分钟内联系您。';
+    } else {
+      sentiment = 'neutral';
+      emoji = '😐';
+      suggestion = '感谢您的咨询，请告诉我您的问题细节～';
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        sentiment,
+        emoji,
+        confidence: total > 0 ? Math.max(posScore, negScore, neuScore) / total : 0.5,
+        scores: { positive: posScore, negative: negScore, neutral: neuScore },
+        suggestion
+      }
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+}
+
 // ============ 健康检查 ============
 function status(_req, res) {
   res.json({
@@ -193,4 +293,4 @@ function status(_req, res) {
   });
 }
 
-module.exports = { chat, recommend, status };
+module.exports = { chat, recommend, status, intentRecognition, sentimentAnalysis };

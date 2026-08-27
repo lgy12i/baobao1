@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 应用主组件 · 霓虹潮流版
  *
  * 路由：
@@ -10,6 +10,8 @@
  *  - /group-buy     拼团优惠
  *  - /discover      好物种草
  *  - /checkin       每日签到
+ *  - /payment/:orderId 支付页面
+ *  - /payment/success 支付成功
  *  - /cart /checkout /orders /user  原业务路由
  */
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
@@ -26,6 +28,8 @@ import RegisterPage from '@/pages/RegisterPage';
 import CheckoutPage from '@/pages/CheckoutPage';
 import OrderListPage from '@/pages/OrderListPage';
 import OrderDetailPage from '@/pages/OrderDetailPage';
+import PaymentPage from '@/pages/PaymentPage';
+import PaymentSuccessPage from '@/pages/PaymentSuccessPage';
 import UserCenterPage from '@/pages/UserCenterPage';
 import NotFoundPage from '@/pages/NotFoundPage';
 import {
@@ -37,7 +41,7 @@ function App() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const protectedRoutes = ['/cart', '/checkout', '/orders', '/user'];
+  const protectedRoutes = ['/cart', '/checkout', '/orders', '/user', '/payment'];
 
   useEffect(() => {
     const isProtected = protectedRoutes.some((r) => location.pathname.startsWith(r));
@@ -62,6 +66,8 @@ function App() {
         {/* 业务 */}
         <Route path="/cart" element={<CartPage />} />
         <Route path="/checkout" element={<CheckoutPage />} />
+        <Route path="/payment/:orderId" element={<PaymentPage />} />
+        <Route path="/payment/success" element={<PaymentSuccessPage />} />
         <Route path="/orders" element={<OrderListPage />} />
         <Route path="/orders/:id" element={<OrderDetailPage />} />
         <Route path="/user" element={<UserCenterPage />} />
@@ -76,3 +82,4 @@ function App() {
 }
 
 export default App;
+
