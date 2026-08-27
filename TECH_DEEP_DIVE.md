@@ -1,6 +1,6 @@
 # 宝宝商城 · 技术深度解析（Docker + Kubernetes + AI Agent RAG）
 
-> 仓库：https://github.com/lgy12i/baobao2
+> 仓库：https://github.com/lgy12i/baobao1
 
 ---
 
